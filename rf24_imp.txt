@@ -1,0 +1,232 @@
+/* Imp Library for the nRF24L01+ 2.4Ghz Transceiver
+ *
+ * Original Author: Sinan Bolel
+ * Email: sinan@swipesense.com
+ * License: Unlicensed. Feel free to use this code and/or contribute to it.
+ *
+ */
+
+/*_____________________________________________________________________________
+
+    RF24 ADDRESSES AND INSTRUCTIONS
+_____________________________________________________________________________*/
+
+/* Memory Map */
+const CONFIG      = 0x00;
+const EN_AA       = 0x01;
+const EN_RXADDR   = 0x02;
+const SETUP_AW    = 0x03;
+const SETUP_RETR  = 0x04;
+const RF_CH       = 0x05;
+const RF_SETUP    = 0x06;
+const STATUS      = 0x07;
+const OBSERVE_TX  = 0x08;
+const CD          = 0x09;
+const RX_ADDR_P0  = 0x0A;
+const RX_ADDR_P1  = 0x0B;
+const RX_ADDR_P2  = 0x0C;
+const RX_ADDR_P3  = 0x0D;
+const RX_ADDR_P4  = 0x0E;
+const RX_ADDR_P5  = 0x0F;
+const TX_ADDR     = 0x10;
+const RX_PW_P0    = 0x11;
+const RX_PW_P1    = 0x12;
+const RX_PW_P2    = 0x13;
+const RX_PW_P3    = 0x14;
+const RX_PW_P4    = 0x15;
+const RX_PW_P5    = 0x16;
+const FIFO_STATUS = 0x17;
+
+/* Bit Mnemonics */
+const MASK_RX_DR  = 6;
+const MASK_TX_DS  = 5;
+const MASK_MAX_RT = 4;
+const EN_CRC      = 3;
+const CRCO        = 2;
+const PWR_UP      = 1;
+const PRIM_RX     = 0;
+const ENAA_P5     = 5;
+const ENAA_P4     = 4;
+const ENAA_P3     = 3;
+const ENAA_P2     = 2;
+const ENAA_P1     = 1;
+const ENAA_P0     = 0;
+const ERX_P5      = 5;
+const ERX_P4      = 4;
+const ERX_P3      = 3;
+const ERX_P2      = 2;
+const ERX_P1      = 1;
+const ERX_P0      = 0;
+const AW          = 0;
+const ARD         = 4;
+const ARC         = 0;
+const PLL_LOCK    = 4;
+const RF_DR       = 3;
+const RF_PWR      = 1;
+const LNA_HCURR   = 0;
+const RX_DR       = 6;
+const TX_DS       = 5;
+const MAX_RT      = 4;
+const RX_P_NO     = 1;
+const TX_FULL     = 0;
+const PLOS_CNT    = 4;
+const ARC_CNT     = 0;
+const TX_REUSE    = 6;
+const FIFO_FULL   = 5;
+const TX_EMPTY    = 4;
+const RX_FULL     = 1;
+const RX_EMPTY    = 0;
+
+/* Instruction Mnemonics */
+const R_REGISTER    = 0x00;
+const W_REGISTER    = 0x20;
+const REGISTER_MASK = 0x1F;
+const R_RX_PAYLOAD  = 0x61;
+const W_TX_PAYLOAD  = 0xA0;
+const FLUSH_TX      = 0xE1;
+const FLUSH_RX      = 0xE2;
+const REUSE_TX_PL   = 0xE3;
+const NOP           = 0xFF;
+
+/*_____________________________________________________________________________
+
+    DOCUMENTATION: PIN SCHEMA FOR IMP <--> nRF24L01
+_______________________________________________________________________________
+
+  nRF24  |  Imp  | Function
+  ---------------------------------------
+  CE    ->   2   |  Controles RX/TX
+  CSN   ->   5   |  Chip select not
+  SCK   ->   1   |  SPI Clock
+  MOSI  ->   8   |  Master-out-slave-in
+  MISO  ->   9   |  Master-in-slave-out
+*/
+
+/*_____________________________________________________________________________
+
+    RF24 CLASS (nRF24L01 Transciever)
+_____________________________________________________________________________*/
+
+class RF24
+{
+  /* Declare null variables */
+  ce_pin = null;
+  cs_pin = null;
+  so_pin = null;
+  spiSetup_flags = null;
+  spiSetup_clock = null;
+
+  /* RF24 Class - Overloaded Constructor */
+  constructor(clock)
+  {
+    /* Initialize Instance Variables */
+    spiSetup_flags = 0;       // SPI Flags (0: Master)
+    spiSetup_clock = clock;   // SPI Clock Speed
+
+    /* Setup SPI_189 */
+    imp_setupPins();
+    SelectSPI();
+
+    /* Send Power-On Signal to nRF24 Chip */
+    RF24_connect();
+  }
+
+  /* RF24 Chip Select Control Functions (CS - Active Low) */
+  function RF24_select()   { cs_pin.write(0); }       // SPI Enable
+  function RF24_deselect() { cs_pin.write(1); }       // SPI Disable
+
+  /* RF24 Mode Select Control Functions (CE - Receiver Mode) */
+  function RF24_startListening() { ce_pin.write(1) }  // RADIO Listen Enable
+  function RF24_stopListening()  { ce_pin.write(0) }  // RADIO Listen Disable
+
+  /* Configure the imp to use SPI, pins 1,8,9 */
+  function SelectSPI()
+  {
+    hardware.configure(SPI_189);
+    return hardware.spi189.configure(0,spiSetup_clock);
+  }
+
+  /* imp Pin Setup */
+  function imp_setupPins()
+  {
+    ce_pin = hardware.pin2;   // CE (RF24 in Receiver Mode)
+                              //  - High: Monitor air, receive packets
+                              //  - Low:  Do not monitor air, standby
+    cs_pin = hardware.pin5;   // CSN (Active low)
+                              //  - High: SPI Communication DISABLED
+                              //  - Low:  SPI Communication ENABLED
+
+    /* Configure CS pin, disable SPI */
+    if(cs_pin != null)
+    {
+      cs_pin.configure(DIGITAL_OUT);
+      RF24_deselect();        // Disable SPI Communication
+    }
+
+    /* Configure CE pin, start radio listening */
+    if(ce_pin != null)
+    {
+      ce_pin.configure(DIGITAL_OUT);
+      RF24_stopListening();   // Disable SPI Communication
+    }
+  }
+
+  function regRead(regAddr)
+  {
+    RF24_select();                                  // Select nRF24L01+
+    hardware.spi189.write(format("%c", regAddr));   // Instruction: Read
+    hardware.spi189.read(1);                        // read a byte
+    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.read(1);                        // read a byte
+    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.read(1);                        // read a byte
+    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.read(1);                        // read a byte
+    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.read(1);                        // read a byte
+    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    local result = hardware.spi189.read(1)[0];      // read the actual result
+    RF24_deselect();                                // Deselect nRF24L01+
+    return result;
+  }
+
+  /* Single byte read */
+  function regWrite(regAddr, data)
+  {
+    local address = regAddr | 0x20;
+    RF24_select();
+    hardware.spi189.write(format("%c",address));    // Write the address
+    hardware.spi189.write(format("%c",data));       // Write the data
+    RF24_deselect();
+  }
+
+  function RF24_connect()
+  {
+    regWrite(CONFIG, 0x0B);
+    local connectionResult = regRead(CONFIG)
+    if (connectionResult == 0x0B) {return server.log(format("    RF24 Configured: 0x%x", regRead(CONFIG)));}
+    else {return server.log(format("RF24 Connection Failure. 0x%x", connectionResult));}
+  }
+
+}
+
+/*_____________________________________________________________________________
+
+    IMP CODE BASE
+_____________________________________________________________________________*/
+
+function imp_connectionStatistics()
+{
+  local signal = format("Signal Strenght: %d dBm", imp.rssi());
+  server.show(signal);
+}
+
+/* Configure Imp */
+server.log(" ====== PROGRAM START ======= ");
+imp.configure("Imp RF24", [], []);
+imp_connectionStatistics();
+
+/* Create the Radio Object */
+server.log("01) RF24 Initialization started...");
+radio <- RF24(100);
+server.log("01) RF24 Success " + radio + "");
