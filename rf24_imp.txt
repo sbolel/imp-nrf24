@@ -88,6 +88,11 @@ const FLUSH_RX      = 0xE2;
 const REUSE_TX_PL   = 0xE3;
 const NOP           = 0xFF;
 
+function _BV(x)
+{
+  return (1<<(x));
+}
+
 /*_____________________________________________________________________________
 
     DOCUMENTATION: PIN SCHEMA FOR IMP <--> nRF24L01
@@ -116,6 +121,8 @@ class RF24
   spiSetup_flags = null;
   spiSetup_clock = null;
 
+/*****************************************************************************/
+
   /* RF24 Class - Overloaded Constructor */
   constructor(clock)
   {
@@ -124,12 +131,32 @@ class RF24
     spiSetup_clock = clock;   // SPI Clock Speed
 
     /* Setup SPI_189 */
-    imp_setupPins();
-    SelectSPI();
+    pin_setup();
+    spi_setup();
+
+    // Set 1500uS (minimum for 32B payload in ESB@250KBPS) timeouts, to make testing a little easier
+    // WARNING: If this is ever lowered, either 250KBS mode with AA is broken or maximum packet
+    // sizes must never be used. See documentation for a more complete explanation.
+    write_register(SETUP_RETR,(0x4<<ARD)|(0xF<<ARC));
+
+    // Reset current status
+    // Notice reset and flush is the last thing we do
+    write_register(STATUS,_BV(RX_DR)|_BV(TX_DS)|_BV(MAX_RT) );
+
+    // Set up default configuration.  Callers can always change it later.
+    // This channel should be universally safe and not bleed over into adjacent
+    // spectrum.
+    set_channel(76);
+
+    // Flush buffers
+    flush_rx();
+    flush_tx();
 
     /* Send Power-On Signal to nRF24 Chip */
-    RF24_connect();
+    // RF24_connect();
   }
+
+/*****************************************************************************/
 
   /* RF24 Chip Select Control Functions (CS - Active Low) */
   function RF24_select()   { cs_pin.write(0); }       // SPI Enable
@@ -139,15 +166,17 @@ class RF24
   function RF24_startListening() { ce_pin.write(1) }  // RADIO Listen Enable
   function RF24_stopListening()  { ce_pin.write(0) }  // RADIO Listen Disable
 
+/*****************************************************************************/
+
   /* Configure the imp to use SPI, pins 1,8,9 */
-  function SelectSPI()
+  function spi_setup()
   {
     hardware.configure(SPI_189);
     return hardware.spi189.configure(0,spiSetup_clock);
   }
 
   /* imp Pin Setup */
-  function imp_setupPins()
+  function pin_setup()
   {
     ce_pin = hardware.pin2;   // CE (RF24 in Receiver Mode)
                               //  - High: Monitor air, receive packets
@@ -171,27 +200,29 @@ class RF24
     }
   }
 
-  function regRead(regAddr)
+/*****************************************************************************/
+
+  function read_register(regAddr)
   {
     RF24_select();                                  // Select nRF24L01+
     hardware.spi189.write(format("%c", regAddr));   // Instruction: Read
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.write("\xFF");                  // Dummy
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.write("\xFF");                  // Dummy
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.write("\xFF");                  // Dummy
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.write("\xFF";                   // Dummy
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write(format("%c", 0x00));      // Dummy
+    hardware.spi189.write("\xFF");                  // Dummy
     local result = hardware.spi189.read(1)[0];      // read the actual result
     RF24_deselect();                                // Deselect nRF24L01+
     return result;
   }
 
   /* Single byte read */
-  function regWrite(regAddr, data)
+  function write_register(regAddr, data)
   {
     local address = regAddr | 0x20;
     RF24_select();
@@ -200,12 +231,57 @@ class RF24
     RF24_deselect();
   }
 
+  function instructByte(instruction)
+  {
+    RF24_select();
+    hardware.spi189.write(format("%c",instruction));   // Send FLUSH_RX instruction
+    RF24_deselect();
+  }
+
+/*****************************************************************************/
+
+  function flush_rx()
+  {
+    instructByte(FLUSH_RX);   // Send FLUSH_RX instruction
+  }
+
+  function flush_tx()
+  {
+    instructByte(FLUSH_TX);   // Send FLUSH_TX instruction
+  }
+
+/*****************************************************************************/
+
+  function get_status()
+  {
+    instructByte(NOP);        // Send NOP instruction
+  }
+
+  function set_channel(channel)
+  {
+    write_register(RF_CH,channel);
+  }
+
+/*****************************************************************************/
+
+  function powerDown()
+  {
+    write_register(CONFIG,read_register(CONFIG) & ~_BV(PWR_UP));
+  }
+
+
+  function powerUp()
+  {
+    write_register(CONFIG,read_register(CONFIG) | _BV(PWR_UP));
+  }
+
+/*****************************************************************************/
+
   function RF24_connect()
   {
-    regWrite(CONFIG, 0x0B);
-    local connectionResult = regRead(CONFIG)
-    if (connectionResult == 0x0B) {return server.log(format("    RF24 Configured: 0x%x", regRead(CONFIG)));}
-    else {return server.log(format("RF24 Connection Failure. 0x%x", connectionResult));}
+    write_register(CONFIG, 0x0B);
+    local connectionResult = read_register(CONFIG);
+    return server.log(format("    RF24 Configured: 0x%x", read_register(CONFIG)));
   }
 
 }
