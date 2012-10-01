@@ -1,10 +1,14 @@
-/* Imp Library for the nRF24L01+ 2.4Ghz Transceiver
- *
- * Original Author: Sinan Bolel
- * Email: sinan@swipesense.com
- * License: Unlicensed. Feel free to use this code and/or contribute to it.
- *
- */
+/* --------------------------------------------------------------------------- *
+ * Imp Library for the nRF24L01+ 2.4Ghz Transceiver                            *
+ * --------------------------------------------------------------------------- *
+ * Original Author: Sinan Bolel                                                *
+ * Company:         SwipeSense Inc.                                            *
+ * Email:           sinan@swipesense.com                                       *
+ * Repository:      git@github.com:sbolel/nrf24_imp.git                        *
+ * Version:         1.2.0                                                      *
+ * Latest Revision: 10/01/2012                                                 *
+ * License: Unlicensed. Feel free to use this code and/or contribute to it     *
+ * --------------------------------------------------------------------------- */
 
 /*_____________________________________________________________________________
 
@@ -88,6 +92,9 @@ const FLUSH_RX      = 0xE2;
 const REUSE_TX_PL   = 0xE3;
 const NOP           = 0xFF;
 
+const pipes0 = "\xE1\xF0\xF0\xF0\xF0";
+const pipes1 = "\xD2\xF0\xF0\xF0\xF0";
+
 function _BV(x)
 {
   return (1<<(x));
@@ -121,6 +128,14 @@ class RF24
   spiSetup_flags = null;
   spiSetup_clock = null;
 
+  remoteAddress = null;
+  localAddress = null;
+  payloadSize = null;
+  dataRate = null;
+  channel = null;
+  power = null;
+  mode = null;
+
 /*****************************************************************************/
 
   /* RF24 Class - Overloaded Constructor */
@@ -129,6 +144,14 @@ class RF24
     /* Initialize Instance Variables */
     spiSetup_flags = 0;       // SPI Flags (0: Master)
     spiSetup_clock = clock;   // SPI Clock Speed
+
+    remoteAddress = 0;
+    localAddress = 0;
+    payloadSize = 0;
+    dataRate = 1;
+    channel = 111;
+    power = 3;
+    mode = 0;
 
     /* Setup SPI_189 */
     pin_setup();
@@ -213,7 +236,7 @@ class RF24
     hardware.spi189.read(1);                        // read a byte
     hardware.spi189.write("\xFF");                  // Dummy
     hardware.spi189.read(1);                        // read a byte
-    hardware.spi189.write("\xFF";                   // Dummy
+    hardware.spi189.write("\xFF");                  // Dummy
     hardware.spi189.read(1);                        // read a byte
     hardware.spi189.write("\xFF");                  // Dummy
     local result = hardware.spi189.read(1)[0];      // read the actual result
@@ -277,11 +300,85 @@ class RF24
 
 /*****************************************************************************/
 
-  function RF24_connect()
+  function startListening()
   {
-    write_register(CONFIG, 0x0B);
-    local connectionResult = read_register(CONFIG);
-    return server.log(format("    RF24 Configured: 0x%x", read_register(CONFIG)));
+    write_register(CONFIG, read_register(CONFIG) | _BV(PWR_UP) | _BV(PRIM_RX));
+    write_register(STATUS, _BV(RX_DR) | _BV(TX_DS) | _BV(MAX_RT) );
+
+/* TODO
+    // Restore the pipe0 adddress, if exists
+    if (pipe0_reading_address)
+      write_register(RX_ADDR_P0, reinterpret_cast<const uint8_t*>(&pipe0_reading_address), 5);
+*/
+    // Flush buffers
+    flush_rx();
+    flush_tx();
+
+    // Go!
+    RF24_startListening();
+
+    // wait for the radio to come up (130us actually only needed)
+    imp.sleep(0.00013);
+  }
+
+  function stopListening()
+  {
+    RF24_stopListening();
+    flush_tx();
+    flush_rx();
+  }
+
+/****************************************************************************/
+
+function openWritingPipe()
+{
+  // Note that AVR 8-bit uC's store this LSB first, and the NRF24L01(+)
+  // expects it LSB first too, so we're good.
+  // Writing pipe: pipes[1]
+
+  write_register(RX_ADDR_P0, pipes1);
+  write_register(TX_ADDR, pipes1);
+  write_register(RX_PW_P0,"\x20");    // max_payload_size = 32;
+}
+
+/****************************************************************************/
+
+/*
+static const uint8_t child_pipe[] PROGMEM =
+{
+  RX_ADDR_P0, RX_ADDR_P1, RX_ADDR_P2, RX_ADDR_P3, RX_ADDR_P4, RX_ADDR_P5
+};
+static const uint8_t child_payload_size[] PROGMEM =
+{
+  RX_PW_P0, RX_PW_P1, RX_PW_P2, RX_PW_P3, RX_PW_P4, RX_PW_P5
+};
+static const uint8_t child_pipe_enable[] PROGMEM =
+{
+  ERX_P0, ERX_P1, ERX_P2, ERX_P3, ERX_P4, ERX_P5
+};
+*/
+
+function openReadingPipe()
+{
+  //   radio.openReadingPipe(1,pipes[0]);  child = 1, pipe = 0
+    write_register(RX_ADDR_P1, pipes0);
+
+    write_register(RX_PW_P1, "\x20"),
+
+  // Note it would be more efficient to set all of the bits for all open
+  // pipes at once.  However, I thought it would make the calling code
+  // more simple to do it this way.
+  write_register(EN_RXADDR, read_register(EN_RXADDR) | _BV(ERX_P1));
+}
+
+
+/****************************************************************************/
+
+  function connectToTheRadio()
+  {
+    openWritingPipe();      // Configure sending address
+    openReadingPipe();      // Configure receiving address
+    startListening();       // Initiate listening
   }
 
 }
