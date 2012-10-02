@@ -117,20 +117,18 @@ function pgm_read_word(p) { (*(p)) }
 ********************************************************************************/
 
 class RF24 {
-  /* Declare null variables */
-  ce_pin = null;
-  cs_pin = null;
-  so_pin = null;
-  spiSetup_flags = null;
-  spiSetup_clock = null;
-
-  remoteAddress = null;
-  localAddress = null;
-  payloadSize = null;
-  dataRate = null;
-  channel = null;
-  power = null;
-  mode = null;
+  ce_pin = null;                      // Chip enable pin
+  cs_pin = null;                      // Chip select not pin
+  so_pin = null;                      // Slave-out pin (not implemented)
+  spiSetup_flags = null;              // Flags for SPI setup
+  spiSetup_clock = null;              // Clock for SPI setup
+  mode = null;                        // Transceiver mode
+  power = null;                       // Transceiver power setting
+  channel = null;                     // Transceiver RF channel
+  dataRate = null;                    // Transceiver data rate
+  payloadSize = null;                 // Transceiver payload size
+  localAddress = null;                // (not implemented)
+  remoteAddress = null;               // (not implemented)
 
 /*----------------------------------------------------------------------------*/
 
@@ -140,10 +138,10 @@ class RF24 {
     mode           = 0;                 // MD  = 0b0000
     power          = 3;                 // PWR = 0b0011
     channel        = 111;               // CH  = 0b01101111
-    dataRate       = 1;                 // DR  = 0b0001 (Unimplemented)
-    payloadSize    = 0;                 // PS  = 0b0000 (Unimplemented)
-    localAddress   = 0;                 // LA  = 0b0000 (Unimplemented)
-    remoteAddress  = 0;                 // RA  = 0b0000 (Unimplemented)
+    dataRate       = 1;                 // DR  = 0b0001 (not implemented)
+    payloadSize    = 0;                 // PS  = 0b0000 (not implemented)
+    localAddress   = 0;                 // LA  = 0b0000 (not implemented)
+    remoteAddress  = 0;                 // RA  = 0b0000 (not implemented)
     spiSetup_flags = 0;                 // SPI Flags = 0b0000 (Master)
     spiSetup_clock = clock;             // SPI Clock Speed = input
 
@@ -351,10 +349,13 @@ function imp_connectionStatistics()
 server.log(" ====== PROGRAM START ======= ");
 imp.configure("Imp RF24", [], []);
 imp_connectionStatistics();
-
 /* Create the Radio Object */
-server.log("01) RF24 Initialization started...");
 radio <- RF24(100);
-server.log("01) RF24 Success " + radio + "");
+server.log("01) RF24 Initialization Success " + radio + "");
+
+/* Start RF24 Radio */
+radio.startListening();
+imp.sleep(1);
+server.log("02) Radio Started ");
 
 /*  ----- EOF --------------------------------------------------------------- */
