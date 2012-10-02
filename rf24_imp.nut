@@ -98,7 +98,6 @@ const pipes1 = "\xD2\xF0\xF0\xF0\xF0";
 
 /* RF24 Library Functions */
 function _BV(x) { return (1<<(x)); }
-function pgm_read_word(p) { (*(p)) }
 
 /* DOCUMENTATION: PIN SCHEMA FOR IMP <--> nRF24L01
 
@@ -117,18 +116,20 @@ function pgm_read_word(p) { (*(p)) }
 ********************************************************************************/
 
 class RF24 {
-  ce_pin = null;                      // Chip enable pin
-  cs_pin = null;                      // Chip select not pin
-  so_pin = null;                      // Slave-out pin (not implemented)
-  spiSetup_flags = null;              // Flags for SPI setup
-  spiSetup_clock = null;              // Clock for SPI setup
-  mode = null;                        // Transceiver mode
-  power = null;                       // Transceiver power setting
-  channel = null;                     // Transceiver RF channel
-  dataRate = null;                    // Transceiver data rate
-  payloadSize = null;                 // Transceiver payload size
-  localAddress = null;                // (not implemented)
-  remoteAddress = null;               // (not implemented)
+  /* Declare null variables */
+  ce_pin = null;
+  cs_pin = null;
+  so_pin = null;
+  spiSetup_flags = null;
+  spiSetup_clock = null;
+
+  mode = null;
+  power = null;
+  channel = null;
+  dataRate = null;
+  payloadSize = null;
+  localAddress = null;
+  remoteAddress = null;
 
 /*----------------------------------------------------------------------------*/
 
@@ -138,10 +139,10 @@ class RF24 {
     mode           = 0;                 // MD  = 0b0000
     power          = 3;                 // PWR = 0b0011
     channel        = 111;               // CH  = 0b01101111
-    dataRate       = 1;                 // DR  = 0b0001 (not implemented)
-    payloadSize    = 0;                 // PS  = 0b0000 (not implemented)
-    localAddress   = 0;                 // LA  = 0b0000 (not implemented)
-    remoteAddress  = 0;                 // RA  = 0b0000 (not implemented)
+    dataRate       = 1;                 // DR  = 0b0001 (Unimplemented)
+    payloadSize    = 0;                 // PS  = 0b0000 (Unimplemented)
+    localAddress   = 0;                 // LA  = 0b0000 (Unimplemented)
+    remoteAddress  = 0;                 // RA  = 0b0000 (Unimplemented)
     spiSetup_flags = 0;                 // SPI Flags = 0b0000 (Master)
     spiSetup_clock = clock;             // SPI Clock Speed = input
 
@@ -159,13 +160,13 @@ class RF24 {
 /*----------------------------------------------------------------------------*/
 
   function csn(state) {                 /* RF24 CSN Functions (Active low) */
-    switch state {                      // Check state input
+    switch(state) {                      // Check state input
       case 0: cs_pin.write(0);          // Select Chip   (SPI comm enabled)
       case 1: cs_pin.write(1);          // Deselect Chip (SPI comm disabled)
     }
   }
   function ce(state) {                  /* RF24 CE Functions (RF24 RX mode) */
-    switch state {                      // Check state input
+    switch(state) {                      // Check state input
       case 1: ce_pin.write(1);          // Enable Chip  (radio listen enabled)
       case 0: ce_pin.write(0);          // Disable Chip (radio listen disabled)
     }
@@ -235,8 +236,19 @@ class RF24 {
   function flush_rx() { instructByte(FLUSH_RX); }             // Flush RX buffer
   function flush_tx() { instructByte(FLUSH_TX); }             // Flush RX buffer
 
-  function get_status() { instructByte(NOP); }                // Read STATUS
   function set_channel(chn) { write_register(RF_CH,chn); }    // Set RF channel
+
+  function get_status() { instructByte(NOP); }                // Read STATUS
+  function print_status(status) {                             // Log status to server
+    server.log(("STATUS\t\t = 0x%02x RX_DR=%x TX_DS=%x MAX_RT=%x RX_P_NO=%x TX_FULL=%x\r\n"),
+           status,
+           (status & _BV(RX_DR))?1:0,
+           (status & _BV(TX_DS))?1:0,
+           (status & _BV(MAX_RT))?1:0,
+           ((status >> RX_P_NO) & B111),
+           (status & _BV(TX_FULL))?1:0
+          );
+  }
 
 /*----------------------------------------------------------------------------*/
 
@@ -333,6 +345,7 @@ function openReadingPipe() {
 
 */
 }
+
 
 
 /*******************************************************************************
